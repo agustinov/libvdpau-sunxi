@@ -34,5 +34,7 @@ struct sunxi_disp
 struct sunxi_disp *sunxi_disp_open(int osd_enabled);
 struct sunxi_disp *sunxi_disp2_open(int osd_enabled);
 struct sunxi_disp *sunxi_disp1_5_open(int osd_enabled);
-
+#ifdef DEF_RENDERX11
+struct sunxi_disp *sunxi_dispx11_open(Display *display, Drawable drawable, VdpDevice device);
+#endif /*DEF_RENDERX11*/
 #endif

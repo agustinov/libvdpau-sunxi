@@ -12,10 +12,14 @@ It also supports all the basic features of the VDPAU API - including presentatio
 As this is **W**ork**I**n**P**rogress, not all features are implemented yet.
 Some of them probably will never get fully supported due to hardware specific limitations.
 
+# UPD:
+* X11 rendering support
+* H264 decoder failure state bug fixed
+
 # Requirements:
 
 * libvdpau >= 1.1
-* libcedrus (https://github.com/linux-sunxi/libcedrus)
+* updated libcedrus (https://github.com/uboborov/libcedrus-H3.git)
 * pixman (http://www.pixman.org)
 
 # Installation:
@@ -31,12 +35,15 @@ $ mpv --vo=vdpau --hwdec=vdpau --hwdec-codecs=all [filename]
 ```
 
 Note: Make sure that you have write access to both `/dev/disp` and `/dev/cedar_dev`
-
+#### UPD:
+It doesn't require `/dev/disp` (kernel 3.4 legacy) in case of using x11 rendering
 # OSD Support:
+#### In case of using x11 rendering OSD doesn't supported
 
 OSD support is available either 
 * via G2D mixer processor (hardware accelerated) on A10/A20 or
 * via pixman (CPU/Neon based) on H3/A33/A80/A64.
+
 
 To enable OSD support for e.g. subtitles or GUI, set VDPAU_OSD environment variable to 1:
 ```

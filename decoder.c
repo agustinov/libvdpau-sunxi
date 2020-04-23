@@ -21,6 +21,11 @@
 #include <cedrus/cedrus.h>
 #include "vdpau_private.h"
 
+#include <stdio.h>
+//static FILE *fp;
+static FILE *fp;
+static uint32_t framecount = 0;
+
 VdpStatus vdp_decoder_create(VdpDevice device,
                              VdpDecoderProfile profile,
                              uint32_t width,
@@ -85,6 +90,16 @@ VdpStatus vdp_decoder_create(VdpDevice device,
 	if (ret != VDP_STATUS_OK)
 		goto err_decoder;
 
+	if (getenv("DUMP_VDPAU")) {
+		framecount = 0;
+		fp = fopen(getenv("DUMP_VDPAU"), "w+");
+		fseek(fp, 0, SEEK_SET);
+		fwrite(&width, sizeof(width), 1, fp);
+		fwrite(&height, sizeof(height), 1, fp);
+		fwrite(&framecount, sizeof(framecount), 1, fp);
+		fwrite(&profile, sizeof(profile), 1, fp);
+	}
+
 	return VDP_STATUS_OK;
 
 err_decoder:
@@ -107,6 +122,12 @@ VdpStatus vdp_decoder_destroy(VdpDecoder decoder)
 	cedrus_mem_free(dec->data);
 
 	handle_destroy(decoder);
+
+	if (getenv("DUMP_VDPAU")) {
+		fseek(fp, sizeof(uint32_t) * 2, SEEK_SET);
+		fwrite(&framecount, sizeof(framecount), 1, fp);
+		fclose(fp);
+	}
 
 	return VDP_STATUS_OK;
 }
@@ -158,7 +179,16 @@ VdpStatus vdp_decoder_render(VdpDecoder decoder,
 		memcpy(cedrus_mem_get_pointer(dec->data) + pos, bitstream_buffers[i].bitstream, bitstream_buffers[i].bitstream_bytes);
 		pos += bitstream_buffers[i].bitstream_bytes;
 	}
+
 	cedrus_mem_flush_cache(dec->data);
+
+	if (getenv("DUMP_VDPAU")) {
+		fwrite(&target, sizeof(target), 1, fp);
+		fwrite(picture_info, sizeof(VdpPictureInfoH264), 1, fp);
+		fwrite(&pos, sizeof(pos), 1, fp);
+		fwrite(cedrus_mem_get_pointer(dec->data), pos, 1, fp);
+		framecount++;
+	}
 
 	return dec->decode(dec, picture_info, pos, vid);
 }

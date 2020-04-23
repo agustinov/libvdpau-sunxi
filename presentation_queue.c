@@ -54,7 +54,7 @@ VdpStatus vdp_presentation_queue_target_create_x11(VdpDevice device,
 
 	qt->drawable = drawable;
 	XSetWindowBackground(dev->display, drawable, 0x000102);
-
+#ifndef DEF_RENDERX11
 	qt->disp = sunxi_disp_open(dev->osd_enabled);
 
 	if (!qt->disp)
@@ -62,7 +62,9 @@ VdpStatus vdp_presentation_queue_target_create_x11(VdpDevice device,
 
 	if (!qt->disp)
 		qt->disp = sunxi_disp1_5_open(dev->osd_enabled);
-
+#else
+	qt->disp = sunxi_dispx11_open(dev->display, qt->drawable, device);
+#endif	
 	if (!qt->disp)
 		return VDP_STATUS_ERROR;
 
@@ -185,7 +187,7 @@ VdpStatus vdp_presentation_queue_display(VdpPresentationQueue presentation_queue
 	Window c;
 	int x,y;
 	XTranslateCoordinates(q->device->display, q->target->drawable, RootWindow(q->device->display, q->device->screen), 0, 0, &x, &y, &c);
-	XClearWindow(q->device->display, q->target->drawable);
+	//XClearWindow(q->device->display, q->target->drawable);
 
 	if (os->vs)
 		q->target->disp->set_video_layer(q->target->disp, x, y, clip_width, clip_height, os);
