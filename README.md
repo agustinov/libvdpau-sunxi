@@ -19,7 +19,7 @@ Some of them probably will never get fully supported due to hardware specific li
 # Requirements:
 
 * libvdpau >= 1.1
-* updated libcedrus (https://github.com/uboborov/libcedrus-H3.git)
+* updated libcedrus (https://github.com/agustinov/libcedrus.git)
 * pixman (http://www.pixman.org)
 
 # Installation:
