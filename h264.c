@@ -24,34 +24,6 @@
 #include <cedrus/cedrus_regs.h>
 #include "vdpau_private.h"
 
-//CEDARV_OUTPUT_FORMAT
-#define OUTPUT_FORMAT(x)		((x) << 4)
-#define OUTPUT_FORMAT_TILE32x32 	(OUTPUT_FORMAT(0x0))
-#define OUTPUT_FORMAT_TILE128x32	(OUTPUT_FORMAT(0x1))
-#define OUTPUT_FORMAT_I420		(OUTPUT_FORMAT(0x2))
-#define OUTPUT_FORMAT_YV12		(OUTPUT_FORMAT(0x3))
-#define OUTPUT_FORMAT_NV12		(OUTPUT_FORMAT(0x4))
-#define OUTPUT_FORMAT_NV21		(OUTPUT_FORMAT(0x5))
-
-#ifndef VE_OUTPUT_CHROMA_OFFSET
-#define VE_OUTPUT_CHROMA_OFFSET             0x0c4
-#endif
-#ifndef VE_OUTPUT_STRIDE
-#define VE_OUTPUT_STRIDE                    0x0c8
-#endif
-#ifndef VE_OUTPUT_FORMAT
-#define VE_OUTPUT_FORMAT                    0x0ec
-#endif
-#ifndef VE_H264_MB_ADDR
-#define VE_H264_MB_ADDR             		0x260
-#endif
-#ifndef VE_H264_ERROR
-#define VE_H264_ERROR           			0x2b8
-#endif
-#ifndef VE_RESET
-#define VE_RESET 						    0x004
-#endif
-
 static int find_startcode(const uint8_t *data, int len, int start)
 {
 	int pos, zeros = 0;
@@ -95,9 +67,9 @@ static int32_t get_se(void *regs)
 	return readl(regs + VE_H264_BASIC_BITS);
 }
 
-#define PIC_TOP_FIELD		0x1
-#define PIC_BOTTOM_FIELD	0x2
-#define PIC_FRAME		0x3
+#define PIC_TOP_FIELD               0x1
+#define PIC_BOTTOM_FIELD            0x2
+#define PIC_FRAME                   0x3
 
 typedef struct
 {
@@ -108,14 +80,14 @@ typedef struct
 	uint8_t field;
 } h264_picture_t;
 
+#define SLICE_TYPE_P                0
+#define SLICE_TYPE_B                1
+#define SLICE_TYPE_I                2
+#define SLICE_TYPE_SP               3
+#define SLICE_TYPE_SI               4
 
-#define SLICE_TYPE_P	0
-#define SLICE_TYPE_B	1
-#define SLICE_TYPE_I	2
-#define SLICE_TYPE_SP	3
-#define SLICE_TYPE_SI	4
-
-#define DEF_REF_PIC_NUM	32
+#define H_REF_PIC_NUM               32
+#define C_REF_PIC_NUM               16
 
 typedef struct
 {
@@ -142,7 +114,6 @@ typedef struct
 	uint8_t disable_deblocking_filter_idc;
 	int8_t slice_alpha_c0_offset_div2;
 	int8_t slice_beta_offset_div2;
-
 	uint8_t luma_log2_weight_denom;
 	uint8_t chroma_log2_weight_denom;
 	int8_t luma_weight_l0[32];
@@ -153,9 +124,8 @@ typedef struct
 	int8_t luma_offset_l1[32];
 	int8_t chroma_weight_l1[32][2];
 	int8_t chroma_offset_l1[32][2];
-
-	h264_picture_t RefPicList0[DEF_REF_PIC_NUM];
-	h264_picture_t RefPicList1[DEF_REF_PIC_NUM];
+	h264_picture_t RefPicList0[H_REF_PIC_NUM];
+	h264_picture_t RefPicList1[H_REF_PIC_NUM];
 } h264_header_t;
 
 typedef struct
@@ -168,9 +138,8 @@ typedef struct
 	uint8_t picture_height_in_mbs_minus1;
 	uint8_t default_scaling_lists;
 	int video_extra_data_len;
-
 	int ref_count;
-	h264_picture_t ref_pic[16];
+	h264_picture_t ref_pic[C_REF_PIC_NUM];
 } h264_context_t;
 
 typedef struct
@@ -185,9 +154,9 @@ static void h264_private_free(decoder_ctx_t *decoder)
 	free(decoder_p);
 }
 
-#define PIC_TYPE_FRAME	0x0
-#define PIC_TYPE_FIELD	0x1
-#define PIC_TYPE_MBAFF	0x2
+#define PIC_TYPE_FRAME              0x0
+#define PIC_TYPE_FIELD              0x1
+#define PIC_TYPE_MBAFF              0x2
 
 typedef struct
 {
@@ -271,6 +240,16 @@ static int ref_pic_list_modification(h264_context_t *c)
 						frame_num /= 2;
 					}
 
+					if (c->ref_count >= C_REF_PIC_NUM) {
+						VDPAU_DBG("Corrupted data while ref_pic_list_modification");
+						return -1;
+					}
+
+					if (refIdxL0 >= H_REF_PIC_NUM) {
+						VDPAU_DBG("Corrupted data while ref_pic_list_modification");
+						return -1;
+					}
+
 					int i, j;
 					for (i = 0; i < c->ref_count; i++)
 					{
@@ -284,9 +263,9 @@ static int ref_pic_list_modification(h264_context_t *c)
 					if (h->field_pic_flag)
 						h->RefPicList0[refIdxL0].field = field;
 					i = ++refIdxL0;
-					
-					if (refIdxL0 >= DEF_REF_PIC_NUM) {
-						VDPAU_DBG("Corrupted data while ref_pic_list_modification\n");
+
+					if (refIdxL0 >= H_REF_PIC_NUM) {
+						VDPAU_DBG("Corrupted data while ref_pic_list_modification");
 						return -1;
 					}
 
@@ -392,21 +371,21 @@ static void pred_weight_table(h264_context_t *c)
 		| ((h->luma_log2_weight_denom & 0xf) << 0)
 		, c->regs + VE_H264_PRED_WEIGHT);
 
-	writel(VE_SRAM_H264_PRED_WEIGHT_TABLE, c->regs + VE_H264_RAM_WRITE_PTR);
+	writel(VE_H264_SRAM_PRED_WEIGHT_TABLE, c->regs + VE_H264_SRAM_ADDR);
 	for (i = 0; i < 32; i++)
 		writel(((h->luma_offset_l0[i] & 0x1ff) << 16)
-			| (h->luma_weight_l0[i] & 0xff), c->regs + VE_H264_RAM_WRITE_DATA);
+			| (h->luma_weight_l0[i] & 0xff), c->regs + VE_H264_SRAM_DATA);
 	for (i = 0; i < 32; i++)
 		for (j = 0; j < 2; j++)
 			writel(((h->chroma_offset_l0[i][j] & 0x1ff) << 16)
-				| (h->chroma_weight_l0[i][j] & 0xff), c->regs + VE_H264_RAM_WRITE_DATA);
+				| (h->chroma_weight_l0[i][j] & 0xff), c->regs + VE_H264_SRAM_DATA);
 	for (i = 0; i < 32; i++)
 		writel(((h->luma_offset_l1[i] & 0x1ff) << 16)
-			| (h->luma_weight_l1[i] & 0xff), c->regs + VE_H264_RAM_WRITE_DATA);
+			| (h->luma_weight_l1[i] & 0xff), c->regs + VE_H264_SRAM_DATA);
 	for (i = 0; i < 32; i++)
 		for (j = 0; j < 2; j++)
 			writel(((h->chroma_offset_l1[i][j] & 0x1ff) << 16)
-				| (h->chroma_weight_l1[i][j] & 0xff), c->regs + VE_H264_RAM_WRITE_DATA);
+				| (h->chroma_weight_l1[i][j] & 0xff), c->regs + VE_H264_SRAM_DATA);
 }
 
 static void dec_ref_pic_marking(h264_context_t *c)
@@ -626,11 +605,9 @@ static int decode_slice_header(h264_context_t *c)
 
 	if (h->nal_unit_type == 20)
 		{}//ref_pic_list_mvc_modification(); // specified in Annex H
-	else {
-		if (ref_pic_list_modification(c)) {
+	else
+		if (ref_pic_list_modification(c))
 			return -1;
-		}
-	}
 
 	if ((info->weighted_pred_flag && (h->slice_type == SLICE_TYPE_P || h->slice_type == SLICE_TYPE_SP)) || (info->weighted_bipred_idc == 1 && h->slice_type == SLICE_TYPE_B))
 		pred_weight_table(c);
@@ -665,7 +642,6 @@ static int decode_slice_header(h264_context_t *c)
 		slice_group_change_cycle u(v)*/
 	return 0;
 }
-
 
 static int fill_frame_lists(h264_context_t *c)
 {
@@ -708,20 +684,20 @@ static int fill_frame_lists(h264_context_t *c)
 	}
 
 	// write picture buffer list
-	writel(VE_SRAM_H264_FRAMEBUFFER_LIST, c->regs + VE_H264_RAM_WRITE_PTR);
+	writel(VE_H264_SRAM_FRAMEBUFFER_LIST, c->regs + VE_H264_SRAM_ADDR);
 
 	for (i = 0; i < 18; i++)
 	{
 		if (!output_placed && !frame_list[i])
 		{
-			writel((uint16_t)c->info->field_order_cnt[0], c->regs + VE_H264_RAM_WRITE_DATA);
-			writel((uint16_t)c->info->field_order_cnt[1], c->regs + VE_H264_RAM_WRITE_DATA);
-			writel(output_p->pic_type << 8, c->regs + VE_H264_RAM_WRITE_DATA);
-			writel(cedrus_mem_get_bus_addr(c->output->yuv->data), c->regs + VE_H264_RAM_WRITE_DATA);
-			writel(cedrus_mem_get_bus_addr(c->output->yuv->data) + c->output->luma_size, c->regs + VE_H264_RAM_WRITE_DATA);
-			writel(cedrus_mem_get_bus_addr(output_p->extra_data), c->regs + VE_H264_RAM_WRITE_DATA);
-			writel(cedrus_mem_get_bus_addr(output_p->extra_data) + c->video_extra_data_len, c->regs + VE_H264_RAM_WRITE_DATA);
-			writel(0, c->regs + VE_H264_RAM_WRITE_DATA);
+			writel((uint16_t)c->info->field_order_cnt[0], c->regs + VE_H264_SRAM_DATA);
+			writel((uint16_t)c->info->field_order_cnt[1], c->regs + VE_H264_SRAM_DATA);
+			writel(output_p->pic_type << 8, c->regs + VE_H264_SRAM_DATA);
+			writel(cedrus_mem_get_bus_addr(c->output->yuv->data), c->regs + VE_H264_SRAM_DATA);
+			writel(cedrus_mem_get_bus_addr(c->output->yuv->data) + c->output->luma_size, c->regs + VE_H264_SRAM_DATA);
+			writel(cedrus_mem_get_bus_addr(output_p->extra_data), c->regs + VE_H264_SRAM_DATA);
+			writel(cedrus_mem_get_bus_addr(output_p->extra_data) + c->video_extra_data_len, c->regs + VE_H264_SRAM_DATA);
+			writel(0, c->regs + VE_H264_SRAM_DATA);
 
 			output_p->pos = i;
 			output_placed = 1;
@@ -730,21 +706,21 @@ static int fill_frame_lists(h264_context_t *c)
 		{
 			int j;
 			for (j = 0; j < 8; j++)
-				writel(0x0, c->regs + VE_H264_RAM_WRITE_DATA);
+				writel(0x0, c->regs + VE_H264_SRAM_DATA);
 		}
 		else
 		{
 			video_surface_ctx_t *surface = frame_list[i]->surface;
 			h264_video_private_t *surface_p = (h264_video_private_t *)surface->decoder_private;
 
-			writel(frame_list[i]->top_pic_order_cnt, c->regs + VE_H264_RAM_WRITE_DATA);
-			writel(frame_list[i]->bottom_pic_order_cnt, c->regs + VE_H264_RAM_WRITE_DATA);
-			writel(surface_p->pic_type << 8, c->regs + VE_H264_RAM_WRITE_DATA);
-			writel(cedrus_mem_get_bus_addr(surface->yuv->data), c->regs + VE_H264_RAM_WRITE_DATA);
-			writel(cedrus_mem_get_bus_addr(surface->yuv->data) + surface->luma_size, c->regs + VE_H264_RAM_WRITE_DATA);
-			writel(cedrus_mem_get_bus_addr(surface_p->extra_data), c->regs + VE_H264_RAM_WRITE_DATA);
-			writel(cedrus_mem_get_bus_addr(surface_p->extra_data) + c->video_extra_data_len, c->regs + VE_H264_RAM_WRITE_DATA);
-			writel(0, c->regs + VE_H264_RAM_WRITE_DATA);
+			writel(frame_list[i]->top_pic_order_cnt, c->regs + VE_H264_SRAM_DATA);
+			writel(frame_list[i]->bottom_pic_order_cnt, c->regs + VE_H264_SRAM_DATA);
+			writel(surface_p->pic_type << 8, c->regs + VE_H264_SRAM_DATA);
+			writel(cedrus_mem_get_bus_addr(surface->yuv->data), c->regs + VE_H264_SRAM_DATA);
+			writel(cedrus_mem_get_bus_addr(surface->yuv->data) + surface->luma_size, c->regs + VE_H264_SRAM_DATA);
+			writel(cedrus_mem_get_bus_addr(surface_p->extra_data), c->regs + VE_H264_SRAM_DATA);
+			writel(cedrus_mem_get_bus_addr(surface_p->extra_data) + c->video_extra_data_len, c->regs + VE_H264_SRAM_DATA);
+			writel(0, c->regs + VE_H264_SRAM_DATA);
 		}
 	}
 
@@ -830,23 +806,21 @@ static VdpStatus h264_decode(decoder_ctx_t *decoder,
 		const uint32_t *sl4 = (uint32_t *)&c->info->scaling_lists_4x4[0][0];
 		const uint32_t *sl8 = (uint32_t *)&c->info->scaling_lists_8x8[0][0];
 
-		writel(VE_SRAM_H264_SCALING_LISTS, c->regs + VE_H264_RAM_WRITE_PTR);
+		writel(VE_H264_SRAM_SCALING_LISTS, c->regs + VE_H264_SRAM_ADDR);
 
 		int i;
 		for (i = 0; i < 2 * 64 / 4; i++)
-			writel(sl8[i], c->regs + VE_H264_RAM_WRITE_DATA);
+			writel(sl8[i], c->regs + VE_H264_SRAM_DATA);
 
 		for (i = 0; i < 6 * 16 / 4; i++)
-			writel(sl4[i], c->regs + VE_H264_RAM_WRITE_DATA);
+			writel(sl4[i], c->regs + VE_H264_SRAM_DATA);
 	}
 
 	// sdctrl
 	writel(0x00000000, c->regs + VE_H264_SDROT_CTRL);
 	if (cedrus_get_ve_version(decoder->device->cedrus) >= 0x1680)
 	{
-		//writel((0x2 << 4), c->regs + 0x0ec);
-
-		writel(OUTPUT_FORMAT_I420, c->regs + VE_OUTPUT_FORMAT);
+		writel(VE_OUTPUT_FORMAT_I420, c->regs + VE_OUTPUT_FORMAT);
 		writel(c->output->chroma_size / 2, c->regs + VE_OUTPUT_CHROMA_OFFSET);
 		writel((ALIGN(decoder->width / 2, 16) << 16) | ALIGN(decoder->width, 32), c->regs + VE_OUTPUT_STRIDE);
 	}
@@ -858,7 +832,7 @@ static VdpStatus h264_decode(decoder_ctx_t *decoder,
 	}
 
 	writel(0x00000000, c->regs + VE_H264_CUR_MB_NUM);
-    writel(0x00000000, c->regs + VE_H264_MB_ADDR);
+	writel(0x00000000, c->regs + VE_H264_MB_ADDR);
 
 	unsigned int slice, pos = 0;
 	for (slice = 0; slice < info->slice_count; slice++)
@@ -897,7 +871,7 @@ static VdpStatus h264_decode(decoder_ctx_t *decoder,
 		// write RefPicLists
 		if (h->slice_type != SLICE_TYPE_I && h->slice_type != SLICE_TYPE_SI)
 		{
-			writel(VE_SRAM_H264_REF_LIST0, c->regs + VE_H264_RAM_WRITE_PTR);
+			writel(VE_H264_SRAM_REF_LIST0, c->regs + VE_H264_SRAM_ADDR);
 			for (i = 0; i < h->num_ref_idx_l0_active_minus1 + 1; i += 4)
 			{
 				int j;
@@ -908,12 +882,12 @@ static VdpStatus h264_decode(decoder_ctx_t *decoder,
 						h264_video_private_t *surface_p = (h264_video_private_t *)h->RefPicList0[i + j].surface->decoder_private;
 						list |= ((surface_p->pos * 2 + (h->RefPicList0[i + j].field == PIC_BOTTOM_FIELD)) << (j * 8));
 					}
-				writel(list, c->regs + VE_H264_RAM_WRITE_DATA);
+				writel(list, c->regs + VE_H264_SRAM_DATA);
 			}
 		}
 		if (h->slice_type == SLICE_TYPE_B)
 		{
-			writel(VE_SRAM_H264_REF_LIST1, c->regs + VE_H264_RAM_WRITE_PTR);
+			writel(VE_H264_SRAM_REF_LIST1, c->regs + VE_H264_SRAM_ADDR);
 			for (i = 0; i < h->num_ref_idx_l1_active_minus1 + 1; i += 4)
 			{
 				int j;
@@ -924,7 +898,7 @@ static VdpStatus h264_decode(decoder_ctx_t *decoder,
 						h264_video_private_t *surface_p = (h264_video_private_t *)h->RefPicList1[i + j].surface->decoder_private;
 						list |= ((surface_p->pos * 2 + (h->RefPicList1[i + j].field  == PIC_BOTTOM_FIELD)) << (j * 8));
 					}
-				writel(list, c->regs + VE_H264_RAM_WRITE_DATA);
+				writel(list, c->regs + VE_H264_SRAM_DATA);
 			}
 		}
 
@@ -1000,10 +974,10 @@ static VdpStatus h264_decode(decoder_ctx_t *decoder,
 			}
 
 			writel((error = readl(c->regs + VE_H264_ERROR)), c->regs + VE_H264_ERROR);
-        	//if(error) {
-          	//	printf("got error=%d while decoding\n", error);
-        	//}
-       	 
+			//if(error) {
+			//	printf("got error=%d while decoding\n", error);
+			//}
+
 		}
 
 		pos = (readl(c->regs + VE_H264_VLD_OFFSET) / 8) - 3;
@@ -1014,6 +988,7 @@ static VdpStatus h264_decode(decoder_ctx_t *decoder,
 err_ve_put:
 	// stop H264 engine
 	cedrus_ve_put(decoder->device->cedrus);
+
 err_free:
 	free(c);
 	return ret;

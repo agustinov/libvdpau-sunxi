@@ -78,9 +78,9 @@ static int32_t get_se(void *regs)
 	return readl(regs + VE_HEVC_BITS_DATA);
 }
 
-#define SLICE_B	0
-#define SLICE_P	1
-#define SLICE_I	2
+#define SLICE_B     0
+#define SLICE_P     1
+#define SLICE_I     2
 
 #define MinCbLog2SizeY (p->info->log2_min_luma_coding_block_size_minus3 + 3)
 #define CtbLog2SizeY (MinCbLog2SizeY + p->info->log2_diff_max_min_luma_coding_block_size)
@@ -106,7 +106,6 @@ struct h265_slice_header {
 	uint8_t colour_plane_id;
 	uint16_t slice_pic_order_cnt_lsb;
 	uint8_t short_term_ref_pic_set_sps_flag;
-
 	uint8_t slice_temporal_mvp_enabled_flag;
 	uint8_t	slice_sao_luma_flag;
 	uint8_t slice_sao_chroma_flag;
@@ -129,12 +128,10 @@ struct h265_slice_header {
 	uint16_t num_entry_point_offsets;
 	uint8_t offset_len_minus1;
 	uint32_t entry_point_offset_minus1[256];
-
 	uint8_t ref_pic_list_modification_flag_l0;
 	uint8_t ref_pic_list_modification_flag_l1;
 	uint8_t list_entry_l0[16];
 	uint8_t list_entry_l1[16];
-
 	uint8_t luma_log2_weight_denom;
 	int8_t delta_chroma_log2_weight_denom;
 	uint8_t luma_weight_l0_flag[16];
@@ -158,10 +155,8 @@ struct h265_private
 	decoder_ctx_t *decoder;
 	video_surface_ctx_t *output;
 	uint8_t nal_unit_type;
-
 	cedrus_mem_t *neighbor_info;
 	cedrus_mem_t *entry_points;
-
 	struct h265_slice_header slice;
 };
 
@@ -434,7 +429,7 @@ static void write_pic_list(struct h265_private *p)
 			video_surface_ctx_t *v = handle_get(p->info->RefPics[i]);
 			struct h265_video_private *vp = get_surface_priv(p, v);
 
-			writel(VE_SRAM_HEVC_PIC_LIST + i * 0x20, p->regs + VE_HEVC_SRAM_ADDR);
+			writel(VE_HEVC_SRAM_PIC_LIST + i * 0x20, p->regs + VE_HEVC_SRAM_ADDR);
 			writel(p->info->PicOrderCntVal[i], p->regs + VE_HEVC_SRAM_DATA);
 			writel(p->info->PicOrderCntVal[i], p->regs + VE_HEVC_SRAM_DATA);
 			writel(cedrus_mem_get_bus_addr(vp->extra_data) >> 8, p->regs + VE_HEVC_SRAM_DATA);
@@ -446,7 +441,7 @@ static void write_pic_list(struct h265_private *p)
 
 	struct h265_video_private *vp = get_surface_priv(p, p->output);
 
-	writel(VE_SRAM_HEVC_PIC_LIST + i * 0x20, p->regs + VE_HEVC_SRAM_ADDR);
+	writel(VE_HEVC_SRAM_PIC_LIST + i * 0x20, p->regs + VE_HEVC_SRAM_ADDR);
 	writel(p->info->CurrPicOrderCntVal, p->regs + VE_HEVC_SRAM_DATA);
 	writel(p->info->CurrPicOrderCntVal, p->regs + VE_HEVC_SRAM_DATA);
 	writel(cedrus_mem_get_bus_addr(vp->extra_data) >> 8, p->regs + VE_HEVC_SRAM_DATA);
@@ -475,7 +470,7 @@ static void write_ref_pic_lists(struct h265_private *p)
 				RefPicListTemp0[rIdx] = p->info->RefPicSetLtCurr[i] | (1 << 7);
 		}
 
-		writel(VE_SRAM_HEVC_REF_PIC_LIST0, p->regs + VE_HEVC_SRAM_ADDR);
+		writel(VE_HEVC_SRAM_REF_PIC_LIST0, p->regs + VE_HEVC_SRAM_ADDR);
 		for (i = 0; i < p->slice.num_ref_idx_l0_active_minus1 + 1; i += 4)
 		{
 			uint32_t list = 0;
@@ -507,7 +502,7 @@ static void write_ref_pic_lists(struct h265_private *p)
 				RefPicListTemp1[rIdx] = p->info->RefPicSetLtCurr[i] | (1 << 7);
 		}
 
-		writel(VE_SRAM_HEVC_REF_PIC_LIST1, p->regs + VE_HEVC_SRAM_ADDR);
+		writel(VE_HEVC_SRAM_REF_PIC_LIST1, p->regs + VE_HEVC_SRAM_ADDR);
 		for (i = 0; i < p->slice.num_ref_idx_l1_active_minus1 + 1; i += 4)
 		{
 			uint32_t list = 0;
@@ -580,7 +575,7 @@ static void write_weighted_pred(struct h265_private *p)
 
 	if (p->slice.slice_type != SLICE_I && p->info->weighted_pred_flag)
 	{
-		writel(VE_SRAM_HEVC_PRED_WEIGHT_LUMA_L0, p->regs + VE_HEVC_SRAM_ADDR);
+		writel(VE_HEVC_SRAM_PRED_WEIGHT_LUMA_L0, p->regs + VE_HEVC_SRAM_ADDR);
 
 		for (i = 0; i < p->slice.num_ref_idx_l0_active_minus1 + 1; i += 2)
 			writel(((p->slice.delta_luma_weight_l0[i] & 0xff) << 0) |
@@ -588,7 +583,7 @@ static void write_weighted_pred(struct h265_private *p)
 				((p->slice.delta_luma_weight_l0[i + 1] & 0xff) << 16) |
 				((p->slice.luma_offset_l0[i + 1] & 0xff) << 24), p->regs + VE_HEVC_SRAM_DATA);
 
-		writel(VE_SRAM_HEVC_PRED_WEIGHT_CHROMA_L0, p->regs + VE_HEVC_SRAM_ADDR);
+		writel(VE_HEVC_SRAM_PRED_WEIGHT_CHROMA_L0, p->regs + VE_HEVC_SRAM_ADDR);
 
 		for (i = 0; i < p->slice.num_ref_idx_l0_active_minus1 + 1; i++)
 			writel(((p->slice.delta_chroma_weight_l0[i][0] & 0xff) << 0) |
@@ -599,7 +594,7 @@ static void write_weighted_pred(struct h265_private *p)
 
 	if (p->slice.slice_type == SLICE_B &&p->info->weighted_bipred_flag)
 	{
-		writel(VE_SRAM_HEVC_PRED_WEIGHT_LUMA_L1, p->regs + VE_HEVC_SRAM_ADDR);
+		writel(VE_HEVC_SRAM_PRED_WEIGHT_LUMA_L1, p->regs + VE_HEVC_SRAM_ADDR);
 
 		for (i = 0; i < p->slice.num_ref_idx_l1_active_minus1 + 1; i += 2)
 			writel(((p->slice.delta_luma_weight_l1[i] & 0xff) << 0) |
@@ -607,7 +602,7 @@ static void write_weighted_pred(struct h265_private *p)
 				((p->slice.delta_luma_weight_l1[i + 1] & 0xff) << 16) |
 				((p->slice.luma_offset_l1[i + 1] & 0xff) << 24), p->regs + VE_HEVC_SRAM_DATA);
 
-		writel(VE_SRAM_HEVC_PRED_WEIGHT_CHROMA_L1, p->regs + VE_HEVC_SRAM_ADDR);
+		writel(VE_HEVC_SRAM_PRED_WEIGHT_CHROMA_L1, p->regs + VE_HEVC_SRAM_ADDR);
 
 
 		for (i = 0; i < p->slice.num_ref_idx_l1_active_minus1 + 1; i++)
@@ -650,7 +645,7 @@ static void write_scaling_lists(struct h265_private *p)
 		(p->info->ScalingListDCCoeff16x16[3] << 8) |
 		(p->info->ScalingListDCCoeff16x16[2] << 0), p->regs + VE_HEVC_SCALING_LIST_DC_COEF1);
 
-	writel(VE_SRAM_HEVC_SCALING_LISTS, p->regs + VE_HEVC_SRAM_ADDR);
+	writel(VE_HEVC_SRAM_SCALING_LISTS, p->regs + VE_HEVC_SRAM_ADDR);
 
 	for (i = 0; i < 6; i++)
 	{
